@@ -1,0 +1,301 @@
+{
+  "name": "Morning Notification (Transurfing)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "⏰ Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем текущее время в Москве (UTC+3)\nconst now = new Date();\nconst moscowOffset = 3 * 60;\nconst utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();\nconst moscowMinutes = utcMinutes + moscowOffset;\n\nlet hours = Math.floor(moscowMinutes / 60) % 24;\nlet minutes = moscowMinutes % 60;\n\n// Утренние уведомления только с 6:00 до 10:59\nif (hours < 6 || hours > 10) {\n  return [];\n}\n\n// Округляем до 15 минут\nconst roundedMinutes = Math.floor(minutes / 15) * 15;\nconst timeToMatch = `${hours.toString().padStart(2, '0')}:${roundedMinutes.toString().padStart(2, '0')}`;\n\n// Альтернативное время (+15 мин)\nconst altMinutes = (roundedMinutes + 15) % 60;\nconst altHours = roundedMinutes + 15 >= 60 ? hours + 1 : hours;\nconst timeToMatchAlt = `${altHours.toString().padStart(2, '0')}:${altMinutes.toString().padStart(2, '0')}`;\n\nreturn [{\n  json: {\n    moscowTime: `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`,\n    timeToMatch,\n    timeToMatchAlt,\n    hours,\n    minutes\n  }\n}];"
+      },
+      "id": "check-time",
+      "name": "🕐 Check Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [224, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-time",
+              "leftValue": "={{ $json.timeToMatch }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-valid",
+      "name": "❓ Valid Time?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [448, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hwpxdefkixhrmspqkqsd.supabase.co/rest/v1/rpc/get_morning_notification_users",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_time_to_match",
+              "value": "={{ $json.timeToMatch }}"
+            },
+            {
+              "name": "p_time_to_match_alt",
+              "value": "={{ $json.timeToMatchAlt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-users",
+      "name": "📋 Get Users (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [672, -96]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.all();\nconst results = [];\n\nconst users = response[0]?.json || [];\nconst userList = Array.isArray(users) ? users : [users];\n\nfor (const data of userList) {\n  if (!data.telegram_id) continue;\n  \n  const name = data.preferred_name || data.first_name || 'друг';\n  const slide = data.target_slide || 'не задан';\n  \n  const courseDay = data.course_day;\n  const totalDays = data.course_total_days || 78;\n  const taskTitle = data.task_title;\n  const taskDescription = data.task_description;\n  const taskInterpretation = data.task_interpretation;\n  \n  let message = '';\n  \n  if (courseDay && taskDescription) {\n    message = `🌅 Доброе утро, ${name}!\\n\\n📅 День ${courseDay} из ${totalDays}${taskTitle ? ': ' + taskTitle : ''}\\n\\n━━━━━━━━━━━━━━━━━━━━\\n\\n📜 Декларация дня:\\n${taskDescription}\\n\\n━━━━━━━━━━━━━━━━━━━━\\n\\n💡 Толкование:\\n${taskInterpretation || 'Практикуй осознанность сегодня.'}\\n\\n━━━━━━━━━━━━━━━━━━━━\\n\\n🎯 Твой слайд: \"${slide}\"\\n\\nХорошего дня! ✨`;\n  } else {\n    message = `🌅 Доброе утро, ${name}!\\n\\nТвой слайд:\\n\"${slide}\"\\n\\nЗакрой глаза на 30 сек. Представь эту картину.\\nПочувствуй — это уже реальность ✨`;\n  }\n  \n  results.push({\n    json: {\n      user_id: data.user_id,\n      telegram_id: data.telegram_id,\n      message,\n      type: 'morning'\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "prepare-messages",
+      "name": "📝 Prepare Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -96]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-user",
+              "leftValue": "={{ $json.telegram_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-users",
+      "name": "❓ Has Users?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1104, -96]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-notification",
+      "name": "📤 Send Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1328, -208],
+      "credentials": {
+        "telegramApi": {
+          "id": "XlAeiZ4z9NX2UU0N",
+          "name": "transerfing"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hwpxdefkixhrmspqkqsd.supabase.co/rest/v1/rpc/log_notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_user_id",
+              "value": "={{ $('📝 Prepare Messages').item.json.user_id }}"
+            },
+            {
+              "name": "p_type",
+              "value": "morning"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-notification",
+      "name": "📊 Log Notification (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1552, -208]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hwpxdefkixhrmspqkqsd.supabase.co/rest/v1/user_states?user_id=eq.{{ $('📝 Prepare Messages').item.json.user_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer SUPABASE_ANON_KEY_PLACEHOLDER"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"awaiting_report\": false}",
+        "options": {}
+      },
+      "id": "reset-awaiting",
+      "name": "🔄 Reset Awaiting Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1776, -208]
+    },
+    {
+      "parameters": {},
+      "id": "no-op",
+      "name": "🚫 No Action",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [672, 112]
+    },
+    {
+      "parameters": {},
+      "id": "no-users",
+      "name": "🚫 No Users",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1328, 0]
+    },
+    {
+      "parameters": {
+        "content": "## 🌅 Morning Notification\n\nЗапуск: каждые 15 мин\nВремя: 6:00-10:59 MSK\nОтправляет:\n- Задание курса (день X из 78)\n- Слайд для визуализации\n\n**RPC функции:**\n- get_morning_notification_users\n- log_notification\n\n**Сбрасывает:**\n- awaiting_report = false",
+        "height": 240,
+        "width": 280,
+        "color": 5
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-240, -60]
+    }
+  ],
+  "connections": {
+    "⏰ Schedule Trigger": {
+      "main": [[{"node": "🕐 Check Time", "type": "main", "index": 0}]]
+    },
+    "🕐 Check Time": {
+      "main": [[{"node": "❓ Valid Time?", "type": "main", "index": 0}]]
+    },
+    "❓ Valid Time?": {
+      "main": [
+        [{"node": "📋 Get Users (RPC)", "type": "main", "index": 0}],
+        [{"node": "🚫 No Action", "type": "main", "index": 0}]
+      ]
+    },
+    "📋 Get Users (RPC)": {
+      "main": [[{"node": "📝 Prepare Messages", "type": "main", "index": 0}]]
+    },
+    "📝 Prepare Messages": {
+      "main": [[{"node": "❓ Has Users?", "type": "main", "index": 0}]]
+    },
+    "❓ Has Users?": {
+      "main": [
+        [{"node": "📤 Send Notification", "type": "main", "index": 0}],
+        [{"node": "🚫 No Users", "type": "main", "index": 0}]
+      ]
+    },
+    "📤 Send Notification": {
+      "main": [[{"node": "📊 Log Notification (RPC)", "type": "main", "index": 0}]]
+    },
+    "📊 Log Notification (RPC)": {
+      "main": [[{"node": "🔄 Reset Awaiting Report", "type": "main", "index": 0}]]
+    }
+  }
+}

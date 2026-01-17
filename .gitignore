@@ -1,0 +1,6 @@
+.env
+.DS_Store
+*.mp3
+*.m4a
+*.mp4
+excalidraw.log
