@@ -1,4 +1,4 @@
-// 🔀 Route Logic v9 — Исправлен баг: /start сбрасывает онбординг независимо от step
+// 🔀 Route Logic v10 — Фикс: команды имеют приоритет над awaiting_report
 
 const mergeVoice = $('🔀 Merge Voice').item.json;
 const user = $('🔀 Merge User').item.json;
@@ -11,6 +11,7 @@ const chatId = mergeVoice.message?.chat?.id || mergeVoice.callback_query?.messag
 
 const step = state?.onboarding_step || 0;
 const awaitingReport = state?.awaiting_report || false;
+const isCommand = text?.startsWith('/');
 const isStart = text === '/start';
 const isSlide = text === '/slide';
 const isTask = /^(\/task|задание|текущее задание)/i.test(text);
@@ -19,6 +20,7 @@ const isProgress = /^(\/progress|прогресс)/i.test(text);
 let route = 'deepseek';
 let userMessage = text;
 
+// 1. Callback — всегда первый приоритет
 if (isCallback) {
   const callbackRoutes = {
     'onb_explanation': 'show_explanation',
@@ -36,15 +38,26 @@ if (isCallback) {
   };
   route = callbackRoutes[callbackData] || 'unknown_callback';
 }
-else if (awaitingReport && text && text.length > 0) {
-  // Пользователь пишет отчёт
+// 2. Команды — всегда выше awaiting_report и онбординга
+else if (isStart) {
+  route = !user.onboarded ? 'show_hook' : 'welcome_back';
+}
+else if (isSlide) {
+  route = 'show_slide';
+}
+else if (isTask) {
+  route = 'show_full_task_msg';
+}
+else if (isProgress) {
+  route = 'show_course_progress';
+}
+// 3. Отчёт — только свободный текст (не команда) при awaiting_report
+else if (awaitingReport && text?.trim() && !isCommand) {
   route = 'save_report';
 }
+// 4. Онбординг — шаги для не-онбордированных
 else if (!user.onboarded) {
-  if (isStart) {
-    // При /start ВСЕГДА начинаем онбординг с начала, независимо от step
-    route = 'show_hook';
-  } else if (step === 1) {
+  if (step === 1) {
     route = 'save_name';
   } else if (step === 2) {
     route = 'save_slide_place';
@@ -54,19 +67,12 @@ else if (!user.onboarded) {
     route = 'save_slide_feeling';
   } else if (step === 5) {
     route = 'show_slide_confirm';
+  } else if (step === 10) {
+    // Ожидание подтверждения слайда — текст игнорируется, ждём кнопку
+    route = 'waiting_slide_confirm';
   }
 }
-else {
-  if (isStart) {
-    route = 'welcome_back';
-  } else if (isSlide) {
-    route = 'show_slide';
-  } else if (isTask) {
-    route = 'show_full_task_msg';
-  } else if (isProgress) {
-    route = 'show_course_progress';
-  }
-}
+// 5. Свободный текст → DeepSeek (default)
 
 return {
   route: route,
