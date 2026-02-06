@@ -7,8 +7,3 @@ node_modules/
 *.mp3
 *.m4a
 *.mp4
-excalidraw.log
-Бэкап/
-workflow_data/
-n8n-workflows-backup.json
-transurfing2-bot-workflow.json
