@@ -1,6 +1,14 @@
-.env
 .DS_Store
+.claude/settings.local.json
+node_modules/
+.env
+.env.local
+*.log
 *.mp3
 *.m4a
 *.mp4
 excalidraw.log
+Бэкап/
+workflow_data/
+n8n-workflows-backup.json
+transurfing2-bot-workflow.json
